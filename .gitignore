@@ -34,3 +34,7 @@ yarn-error.log*
 
 .vercel
 .env*
+
+# Presentations and Office docs (kept local only)
+*.pptx
+*.ppt
