@@ -310,7 +310,7 @@ const EposTerminal = () => {
       <FingerprintScannerModal
         isOpen={isBioModalOpen}
         onClose={() => setIsBioModalOpen(false)}
-        memberName={scanData?.consumer?.headName}
+        memberName={scanData?.familyMembers?.find(m => m.id === selectedMemberId)?.name || scanData?.consumer?.headName}
         onScanComplete={handleScannerModalComplete}
       />
 

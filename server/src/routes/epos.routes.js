@@ -6,8 +6,12 @@ const {
   scanCard,
   verifyFingerprint,
   dispenseRation,
-  generateReceipt
+  generateReceipt,
+  getWebAuthnChallenge
 } = require('../controllers/epos.controller');
+
+// Challenge endpoint accessible to terminals/clients
+router.get('/webauthn-challenge', getWebAuthnChallenge);
 
 router.use(protect, requireRole('distributor'));
 

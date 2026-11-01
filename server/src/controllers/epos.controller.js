@@ -200,9 +200,34 @@ const generateReceipt = async (req, res, next) => {
   }
 };
 
+// @desc    Generate WebAuthn Cryptographic Challenge for phone/hardware biometric verification
+// @route   GET /api/distributor/epos/webauthn-challenge
+// @access  Public / Private
+const getWebAuthnChallenge = async (req, res, next) => {
+  try {
+    const crypto = require('crypto');
+    const challengeBytes = crypto.randomBytes(32);
+    const challengeBase64 = challengeBytes.toString('base64');
+    const challengeBase64Url = challengeBytes.toString('base64url');
+
+    res.json({
+      success: true,
+      challenge: challengeBase64,
+      challengeBase64Url,
+      rp: {
+        name: 'RationSetu e-POS Biometric Terminal'
+      },
+      timeout: 60000
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   scanCard,
   verifyFingerprint,
   dispenseRation,
-  generateReceipt
+  generateReceipt,
+  getWebAuthnChallenge
 };
