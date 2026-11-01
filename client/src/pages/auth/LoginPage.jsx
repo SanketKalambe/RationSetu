@@ -70,6 +70,13 @@ const LoginPage = () => {
           <p className="text-xs text-slate-400">Access Government Admin, Distributor or Digital Ration Book</p>
         </div>
 
+        {new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('expired') && !error && (
+          <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>Your previous session has expired. Please sign in again.</span>
+          </div>
+        )}
+
         {error && (
           <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
+import { logout } from '../../redux/slices/authSlice';
 import { 
   scanConsumerCard, 
   verifyFingerprint, 
@@ -23,6 +25,7 @@ import FingerprintScannerModal from '../../components/FingerprintScannerModal';
 
 const EposTerminal = () => {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const { currentStep, scanData, entitlement, bioVerification, dispenseData, receiptData, loading, error } = useSelector((state) => state.epos);
 
   const [inputCardNo, setInputCardNo] = useState('RC100200300');
@@ -140,9 +143,22 @@ const EposTerminal = () => {
       </div>
 
       {error && (
-        <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-rose-400 text-xs flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          {error}
+        <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-rose-400 text-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+          {(error.includes('authorized') || error.includes('Token') || error.includes('expired') || error.includes('account')) && (
+            <button
+              onClick={() => {
+                dispatch(logout());
+                navigate('/login');
+              }}
+              className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex-shrink-0"
+            >
+              Re-login to Distributor Portal →
+            </button>
+          )}
         </div>
       )}
 
