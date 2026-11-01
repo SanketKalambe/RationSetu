@@ -28,7 +28,7 @@ const Navbar = () => {
           <div>
             <div className="flex items-center gap-2">
               <span className="font-extrabold text-lg text-slate-100 tracking-tight font-['Outfit']">
-                Smart <span className="gradient-text">PDS</span>
+                Ration<span className="gradient-text">Setu</span>
               </span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 hidden sm:inline-block">
                 v2.0 e-POS

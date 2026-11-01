@@ -22,10 +22,10 @@ const FingerprintScannerModal = ({ isOpen, onClose, memberName, onScanComplete }
         const credential = await navigator.credentials.create({
           publicKey: {
             challenge,
-            rp: { name: "Smart PDS e-POS System" },
+            rp: { name: "RationSetu e-POS System" },
             user: {
               id: new Uint8Array(16),
-              name: memberName || "consumer@smartpds.gov.in",
+              name: memberName || "consumer@rationsetu.gov.in",
               displayName: memberName || "PDS Beneficiary"
             },
             pubKeyCredParams: [{ alg: -7, type: "public-key" }],
