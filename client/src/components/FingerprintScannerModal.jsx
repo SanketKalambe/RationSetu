@@ -5,11 +5,13 @@ import {
   AlertTriangle, 
   ShieldCheck, 
   RefreshCw, 
-  Smartphone, 
+  Laptop, 
+  Smartphone,
   Sliders, 
   Info,
   QrCode,
-  Check
+  Check,
+  ArrowRight
 } from 'lucide-react';
 import Modal from './Modal';
 import API from '../services/api';
@@ -18,7 +20,8 @@ const FingerprintScannerModal = ({ isOpen, onClose, memberName, onScanComplete }
   const [scanning, setScanning] = useState(false);
   const [scanStepMessage, setScanStepMessage] = useState('');
   const [scannedData, setScannedData] = useState(null);
-  const [mode, setMode] = useState('webauthn'); // 'webauthn' (Phone/Hardware) or 'simulated'
+  // Modes: 'simulated' (Default/Recommended), 'platform' (Windows Hello / Laptop), 'cross_device' (Phone QR)
+  const [mode, setMode] = useState('simulated');
   const [error, setError] = useState(null);
 
   const isWebAuthnSupported = typeof window !== 'undefined' && !!window.PublicKeyCredential;
@@ -28,10 +31,10 @@ const FingerprintScannerModal = ({ isOpen, onClose, memberName, onScanComplete }
     setError(null);
     setScannedData(null);
 
-    // MODE 1: WebAuthn Phone / Hardware Biometric Sensor
-    if (mode === 'webauthn') {
+    // MODE: WebAuthn Hardware (Platform or Cross-Device)
+    if (mode === 'platform' || mode === 'cross_device') {
       if (!isWebAuthnSupported) {
-        setError('Your browser does not support WebAuthn biometrics. Please switch to Optical Sensor simulator.');
+        setError('Your browser does not support WebAuthn biometrics. Please use the Optical Sensor simulator.');
         setScanning(false);
         return;
       }
@@ -39,32 +42,41 @@ const FingerprintScannerModal = ({ isOpen, onClose, memberName, onScanComplete }
       try {
         setScanStepMessage('Requesting cryptographic challenge from server...');
         
-        // 1. Fetch challenge from backend server
         let challengeBase64;
         try {
           const res = await API.get('/auth/webauthn-challenge');
           challengeBase64 = res.data.challenge;
         } catch (apiErr) {
-          console.warn('Backend challenge request failed, using secure cryptographic fallback:', apiErr.message);
           const fallback = new Uint8Array(32);
           window.crypto.getRandomValues(fallback);
           challengeBase64 = btoa(String.fromCharCode(...fallback));
         }
 
-        // 2. Convert base64 to Uint8Array challenge buffer
         const rawChallenge = atob(challengeBase64.replace(/-/g, '+').replace(/_/g, '/'));
         const challengeBuffer = Uint8Array.from(rawChallenge, c => c.charCodeAt(0));
 
-        // 3. User & RP Configuration
         const userEncoder = new TextEncoder();
         const userIdBytes = userEncoder.encode((memberName || 'beneficiary').slice(0, 16));
 
-        setScanStepMessage('Prompting phone/device biometric sensor...');
+        setScanStepMessage(
+          mode === 'platform' 
+            ? 'Prompting Windows Hello / Laptop Fingerprint sensor...'
+            : 'Prompting Phone / Cross-Device sensor...'
+        );
 
-        // 4. Trigger WebAuthn API on browser
-        // Leaving authenticatorAttachment unconstrained allows:
-        // - On Phone: Phone's native fingerprint/biometric prompt directly opens
-        // - On Desktop: Chrome/Edge opens QR code dialog to use phone camera, or Windows Hello / Touch ID
+        // Build authenticatorSelection
+        // For 'platform': forces local PC fingerprint / Windows Hello PIN directly (No phone QR code!)
+        // For 'cross_device': allows hybrid caBLE phone pairing
+        const authenticatorSelection = mode === 'platform'
+          ? {
+              authenticatorAttachment: 'platform',
+              userVerification: 'preferred'
+            }
+          : {
+              userVerification: 'preferred',
+              residentKey: 'preferred'
+            };
+
         const credential = await navigator.credentials.create({
           publicKey: {
             challenge: challengeBuffer,
@@ -77,19 +89,15 @@ const FingerprintScannerModal = ({ isOpen, onClose, memberName, onScanComplete }
               displayName: memberName || 'Ration Beneficiary'
             },
             pubKeyCredParams: [
-              { alg: -7, type: 'public-key' },   // ES256 (Primary for Smartphones: Android & iOS)
-              { alg: -257, type: 'public-key' }  // RS256 (Windows Hello / Mac)
+              { alg: -7, type: 'public-key' },   // ES256 (Smartphones / TouchID)
+              { alg: -257, type: 'public-key' }  // RS256 (Windows Hello)
             ],
-            authenticatorSelection: {
-              userVerification: 'preferred',
-              residentKey: 'preferred'
-            },
+            authenticatorSelection,
             timeout: 60000,
             attestation: 'none'
           }
         });
 
-        // 5. Credential successfully captured!
         const credId = credential.id || btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
         const hash = `WEBAUTHN_${credId.slice(0, 24)}_APPROVED`;
 
@@ -97,7 +105,7 @@ const FingerprintScannerModal = ({ isOpen, onClose, memberName, onScanComplete }
           hash,
           quality: '100% (Cryptographic Proof)',
           timestamp: new Date().toLocaleTimeString(),
-          method: 'Phone Fingerprint / WebAuthn Sensor',
+          method: mode === 'platform' ? 'Windows Hello / Hardware Sensor' : 'Phone / WebAuthn Sensor',
           id: credential.id
         });
         setScanning(false);
@@ -109,99 +117,133 @@ const FingerprintScannerModal = ({ isOpen, onClose, memberName, onScanComplete }
         return;
 
       } catch (err) {
-        console.warn('WebAuthn biometric capture notice:', err);
+        console.warn('WebAuthn sensor capture notice:', err);
         setScanning(false);
         setScanStepMessage('');
 
         if (err.name === 'NotAllowedError') {
-          setError('Biometric prompt was cancelled or timed out. You can retry or switch to the Optical Sensor simulator.');
+          setError(
+            mode === 'cross_device'
+              ? 'Phone passkey sync failed or was cancelled. Note: Google Play Services blocks passkeys on "localhost" over Bluetooth. Please use "Windows Hello (PC)" or the "Optical Sensor" simulator below.'
+              : 'Biometric prompt was cancelled or timed out. You can retry or switch to the Optical Sensor simulator.'
+          );
         } else if (err.name === 'SecurityError') {
-          setError('WebAuthn requires HTTPS or localhost. If accessing via local network IP on phone, use HTTPS or switch to Optical Sensor.');
+          setError('WebAuthn requires HTTPS or localhost. Switch to the Optical Sensor simulator.');
         } else {
-          setError(`Sensor notice: ${err.message || 'Device biometrics unavailable'}. You can switch to the Optical Sensor simulator.`);
+          setError(`Sensor notice: ${err.message || 'Biometric hardware unavailable'}. Switch to the Optical Sensor simulator.`);
         }
         return;
       }
     }
 
-    // MODE 2: Interactive Optical Sensor Simulation (Safe Fallback)
-    setScanStepMessage('Reading optical sensor pad...');
+    // MODE: Interactive Optical Sensor Simulation (Physical e-POS Hardware Simulation)
+    setScanStepMessage('Capturing fingerprint on optical scanner pad...');
     setTimeout(() => {
       const generatedHash = `FP_HASH_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
       setScannedData({
         hash: generatedHash,
-        quality: `${Math.floor(95 + Math.random() * 5)}%`,
+        quality: `${Math.floor(96 + Math.random() * 4)}%`,
         timestamp: new Date().toLocaleTimeString(),
-        method: 'Optical Sensor (Simulator)'
+        method: 'e-POS Optical Biometric Sensor'
       });
       setScanning(false);
       setScanStepMessage('');
       if (onScanComplete) {
         onScanComplete(generatedHash);
       }
-    }, 1800);
+    }, 1600);
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="e-POS Biometric Scanner Pad" maxWidth="max-w-md">
-      <div className="space-y-5 text-center text-slate-200">
+    <Modal isOpen={isOpen} onClose={onClose} title="e-POS Biometric Scanner Pad" maxWidth="max-w-lg">
+      <div className="space-y-4 text-center text-slate-200">
         
         {/* Header information */}
         <div className="space-y-1">
           <h3 className="text-sm font-bold text-slate-100 flex items-center justify-center gap-1.5">
-            <ShieldCheck className="w-4 h-4 text-purple-400" />
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
             {memberName ? `Biometric Verification: ${memberName}` : 'Biometric Fingerprint Match'}
           </h3>
           <p className="text-xs text-slate-400">
-            Authenticate beneficiary against Public Distribution registry
+            Aadhaar biometric authentication against Public Distribution registry
           </p>
         </div>
 
-        {/* Sensor Mode Switcher */}
-        <div className="flex p-1 bg-slate-900 rounded-xl border border-slate-800 text-xs">
-          <button
-            type="button"
-            onClick={() => { setMode('webauthn'); setError(null); }}
-            className={`flex-1 py-2 font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-              mode === 'webauthn' 
-                ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' 
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            Phone / WebAuthn Sensor
-          </button>
-          
+        {/* 3-Way Mode Switcher */}
+        <div className="grid grid-cols-3 gap-1 p-1 bg-slate-900 rounded-xl border border-slate-800 text-xs">
           <button
             type="button"
             onClick={() => { setMode('simulated'); setError(null); }}
-            className={`flex-1 py-2 font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+            className={`py-2 px-1 font-bold rounded-lg transition-all flex flex-col items-center justify-center gap-1 ${
               mode === 'simulated' 
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' 
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <Sliders className="w-3.5 h-3.5" />
-            Optical Simulator
+            <span className="text-[11px]">Optical Scanner</span>
+            <span className="text-[9px] text-blue-200 font-normal">(Recommended)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setMode('platform'); setError(null); }}
+            className={`py-2 px-1 font-bold rounded-lg transition-all flex flex-col items-center justify-center gap-1 ${
+              mode === 'platform' 
+                ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' 
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Laptop className="w-3.5 h-3.5" />
+            <span className="text-[11px]">Windows Hello</span>
+            <span className="text-[9px] text-purple-200 font-normal">(PC Fingerprint)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setMode('cross_device'); setError(null); }}
+            className={`py-2 px-1 font-bold rounded-lg transition-all flex flex-col items-center justify-center gap-1 ${
+              mode === 'cross_device' 
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' 
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span className="text-[11px]">Phone QR</span>
+            <span className="text-[9px] text-indigo-200 font-normal">(Hybrid caBLE)</span>
           </button>
         </div>
 
-        {/* Mode Guide Notes */}
-        {mode === 'webauthn' ? (
-          <div className="p-3 bg-purple-950/30 border border-purple-500/20 rounded-xl text-left text-[11px] text-purple-200 space-y-1">
-            <div className="font-semibold text-purple-300 flex items-center gap-1">
-              <QrCode className="w-3.5 h-3.5" /> WebAuthn Fingerprint Hardware:
-            </div>
-            <ul className="list-disc list-inside space-y-0.5 text-slate-300 text-[10px]">
-              <li><strong className="text-purple-300">On Phone:</strong> Directly prompts your phone's fingerprint / Face ID sensor.</li>
-              <li><strong className="text-purple-300">On Laptop/PC:</strong> Select <em>"Use a phone or tablet"</em> to scan QR with phone, or use Windows Hello.</li>
-              <li><strong className="text-purple-300">Backend Challenge:</strong> Verified via 256-bit cryptographic challenge.</li>
-            </ul>
-          </div>
-        ) : (
+        {/* Informative Guidance Banner based on Mode */}
+        {mode === 'simulated' && (
           <div className="p-2.5 bg-blue-950/30 border border-blue-500/20 rounded-xl text-left text-[11px] text-blue-200 flex items-center gap-2">
             <Info className="w-4 h-4 flex-shrink-0 text-blue-400" />
-            <span>Simulates an on-counter physical optical biometric scanner for testing and demonstration.</span>
+            <span>Simulates an on-counter physical optical biometric scanner (Mantra / Startek) for instant, reliable viva demo.</span>
+          </div>
+        )}
+
+        {mode === 'platform' && (
+          <div className="p-2.5 bg-purple-950/30 border border-purple-500/20 rounded-xl text-left text-[11px] text-purple-200 space-y-1">
+            <div className="font-semibold text-purple-300 flex items-center gap-1">
+              <Laptop className="w-3.5 h-3.5" /> Direct PC Windows Hello / Touch ID:
+            </div>
+            <p className="text-[10px] text-slate-300 leading-relaxed">
+              Triggers your laptop's fingerprint sensor, facial recognition, or Windows PIN directly on this computer without needing to scan any QR code.
+            </p>
+          </div>
+        )}
+
+        {mode === 'cross_device' && (
+          <div className="p-2.5 bg-amber-950/30 border border-amber-500/20 rounded-xl text-left text-[11px] text-amber-200 space-y-1">
+            <div className="font-semibold text-amber-300 flex items-center gap-1">
+              <AlertTriangle className="w-3.5 h-3.5" /> Note on Phone Cross-Device QR:
+            </div>
+            <p className="text-[10px] text-slate-300 leading-relaxed">
+              Google Play Services on Android requires an official <strong>HTTPS domain</strong> to sync passkeys over Bluetooth. On <code className="text-amber-300 bg-amber-950 px-1 rounded">localhost</code>, Android's Google Play Services displays <em>"Something went wrong"</em> because it cannot route local loopback to Google's cloud relay.
+            </p>
+            <p className="text-[10px] text-amber-400 font-semibold">
+              Tip: Use <strong>Windows Hello</strong> or the <strong>Optical Scanner</strong> tab for 100% successful verification!
+            </p>
           </div>
         )}
 
@@ -209,7 +251,7 @@ const FingerprintScannerModal = ({ isOpen, onClose, memberName, onScanComplete }
         <div className="relative w-36 h-36 mx-auto rounded-3xl bg-slate-900 border-2 border-slate-700/80 flex items-center justify-center overflow-hidden shadow-inner group">
           {/* Scanning Beam Animation */}
           {scanning && (
-            <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-purple-400 to-transparent shadow-lg shadow-purple-500 animate-pulse top-0 animate-[ping_2s_infinite]" />
+            <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-lg shadow-emerald-500 animate-pulse top-0 animate-[ping_2s_infinite]" />
           )}
 
           <Fingerprint
@@ -217,8 +259,8 @@ const FingerprintScannerModal = ({ isOpen, onClose, memberName, onScanComplete }
               scannedData
                 ? 'text-emerald-400 drop-shadow-[0_0_15px_rgba(16,185,129,0.5)] scale-105'
                 : scanning
-                ? 'text-purple-400 animate-pulse scale-110'
-                : 'text-slate-600 group-hover:text-purple-400'
+                ? 'text-emerald-400 animate-pulse scale-110'
+                : 'text-slate-600 group-hover:text-blue-400'
             }`}
           />
 
@@ -231,28 +273,45 @@ const FingerprintScannerModal = ({ isOpen, onClose, memberName, onScanComplete }
 
         {/* Scan Status / Message */}
         {scanning && (
-          <div className="text-xs font-semibold text-purple-400 animate-pulse">
+          <div className="text-xs font-semibold text-blue-400 animate-pulse">
             {scanStepMessage || 'Waiting for biometric sensor input...'}
           </div>
         )}
 
-        {/* Error Alert */}
+        {/* Error Alert with Quick Switch */}
         {error && (
-          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs text-left space-y-1">
+          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs text-left space-y-2">
             <div className="flex items-center gap-1.5 font-bold text-rose-400">
               <AlertTriangle className="w-4 h-4 flex-shrink-0" />
               Sensor Notice
             </div>
             <p className="text-[11px] leading-relaxed text-slate-300">{error}</p>
-            {mode === 'webauthn' && (
-              <button
-                type="button"
-                onClick={() => { setMode('simulated'); setError(null); }}
-                className="mt-1 text-[11px] font-bold text-blue-400 hover:text-blue-300 underline block"
-              >
-                Switch to Optical Sensor Simulator →
-              </button>
-            )}
+            
+            <button
+              type="button"
+              onClick={() => { 
+                setMode('simulated'); 
+                setError(null);
+                setTimeout(() => {
+                  // Auto start optical scan on fallback click
+                  setScanning(true);
+                  setTimeout(() => {
+                    const generatedHash = `FP_HASH_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+                    setScannedData({
+                      hash: generatedHash,
+                      quality: '98%',
+                      timestamp: new Date().toLocaleTimeString(),
+                      method: 'e-POS Optical Biometric Sensor'
+                    });
+                    setScanning(false);
+                    if (onScanComplete) onScanComplete(generatedHash);
+                  }, 1500);
+                }, 50);
+              }}
+              className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md"
+            >
+              Verify Instantly with Optical Scanner Simulator <ArrowRight className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
 
@@ -265,7 +324,7 @@ const FingerprintScannerModal = ({ isOpen, onClose, memberName, onScanComplete }
             <div className="space-y-1 text-[11px] font-mono text-slate-300">
               <div className="flex justify-between">
                 <span className="text-slate-400">Template Hash:</span>
-                <span className="font-bold text-purple-300">{scannedData.hash.slice(0, 22)}...</span>
+                <span className="font-bold text-emerald-300">{scannedData.hash.slice(0, 22)}...</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Quality Score:</span>
@@ -281,9 +340,9 @@ const FingerprintScannerModal = ({ isOpen, onClose, memberName, onScanComplete }
 
         {!scanning && !scannedData && !error && (
           <p className="text-xs text-slate-400">
-            {mode === 'webauthn'
-              ? 'Click below to prompt your phone or device fingerprint scanner.'
-              : 'Click below to simulate hardware fingerprint capture.'}
+            {mode === 'simulated' && 'Click below to capture fingerprint on the optical sensor simulator.'}
+            {mode === 'platform' && 'Click below to trigger your laptop/PC Windows Hello biometric reader.'}
+            {mode === 'cross_device' && 'Click below to generate cross-device QR code.'}
           </p>
         )}
 
@@ -294,25 +353,31 @@ const FingerprintScannerModal = ({ isOpen, onClose, memberName, onScanComplete }
             disabled={scanning}
             onClick={startScan}
             className={`flex-1 py-3 rounded-xl font-bold text-xs shadow-lg transition-all flex items-center justify-center gap-2 text-white ${
-              mode === 'webauthn'
-                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-600/25'
-                : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/25'
+              mode === 'simulated'
+                ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/25'
+                : mode === 'platform'
+                ? 'bg-purple-600 hover:bg-purple-500 shadow-purple-600/25'
+                : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/25'
             }`}
           >
             {scanning ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                Triggering Sensor...
+                Reading Sensor...
               </>
             ) : scannedData ? (
               'Rescan Biometrics'
-            ) : mode === 'webauthn' ? (
+            ) : mode === 'simulated' ? (
               <>
-                <Smartphone className="w-4 h-4" /> Trigger Phone Fingerprint
+                <Fingerprint className="w-4 h-4" /> Scan Optical Sensor Pad
+              </>
+            ) : mode === 'platform' ? (
+              <>
+                <Laptop className="w-4 h-4" /> Trigger Windows Hello (PC)
               </>
             ) : (
               <>
-                <Fingerprint className="w-4 h-4" /> Scan Optical Sensor
+                <Smartphone className="w-4 h-4" /> Trigger Phone QR Passkey
               </>
             )}
           </button>
