@@ -42,3 +42,7 @@ yarn-error.log*
 # Research papers and local documents (strictly local only - never push to GitHub)
 MP Research paper/
 *[Rr]esearch [Pp]aper*/
+
+# Local study materials and viva PDFs (kept local only)
+*.pdf
+generate_viva_pdf.py
