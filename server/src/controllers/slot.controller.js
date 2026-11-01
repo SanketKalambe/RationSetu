@@ -150,6 +150,20 @@ const bookSlot = async (req, res, next) => {
       type: 'slot'
     });
 
+    try {
+      const Shop = require('../models/Shop');
+      const shopDoc = await Shop.findById(updatedSlotDay.shop);
+      if (shopDoc && shopDoc.distributorUser) {
+        await createNotification({
+          userId: shopDoc.distributorUser,
+          message: `New Real-Time Slot Booking: ${consumer.headOfHouseholdName || req.user.name} (Card: ${consumer.rationCardNo}) booked ${updatedSlotDay.timeSlot} on ${updatedSlotDay.date}.`,
+          type: 'slot'
+        });
+      }
+    } catch (notifErr) {
+      console.warn('Distributor notification notice:', notifErr.message);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Slot booked successfully!',

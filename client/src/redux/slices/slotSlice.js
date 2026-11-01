@@ -14,6 +14,28 @@ export const bookTimeSlot = createAsyncThunk('slots/book', async (bookingPayload
   try {
     const response = await API.post('/consumer/slots/book', bookingPayload);
     dispatch(fetchAvailableSlots({ date: bookingPayload.date }));
+
+    // Real-time multi-tab & device synchronization broadcast
+    try {
+      if (typeof window !== 'undefined') {
+        if ('BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('rationsetu_realtime_events');
+          bc.postMessage({
+            type: 'SLOT_BOOKED',
+            payload: response.data.booking,
+            timestamp: Date.now()
+          });
+        }
+        localStorage.setItem('rationsetu_last_booking_event', JSON.stringify({
+          type: 'SLOT_BOOKED',
+          payload: response.data.booking,
+          timestamp: Date.now()
+        }));
+      }
+    } catch (e) {
+      console.warn('Real-time sync broadcast notice:', e);
+    }
+
     return response.data.booking;
   } catch (err) {
     return rejectWithValue(err.response?.data?.error || 'Slot booking failed.');
@@ -23,6 +45,28 @@ export const bookTimeSlot = createAsyncThunk('slots/book', async (bookingPayload
 export const cancelSlotBooking = createAsyncThunk('slots/cancel', async (bookingId, { rejectWithValue }) => {
   try {
     const response = await API.delete(`/consumer/slots/${bookingId}`);
+
+    // Real-time multi-tab & device synchronization broadcast
+    try {
+      if (typeof window !== 'undefined') {
+        if ('BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('rationsetu_realtime_events');
+          bc.postMessage({
+            type: 'SLOT_CANCELLED',
+            payload: response.data.booking,
+            timestamp: Date.now()
+          });
+        }
+        localStorage.setItem('rationsetu_last_booking_event', JSON.stringify({
+          type: 'SLOT_CANCELLED',
+          payload: response.data.booking,
+          timestamp: Date.now()
+        }));
+      }
+    } catch (e) {
+      console.warn('Real-time sync broadcast notice:', e);
+    }
+
     return response.data.booking;
   } catch (err) {
     return rejectWithValue(err.response?.data?.error || 'Failed to cancel slot.');

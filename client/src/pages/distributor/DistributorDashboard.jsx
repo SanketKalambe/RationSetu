@@ -10,7 +10,8 @@ const DistributorDashboard = () => {
   const [isBioModalOpen, setIsBioModalOpen] = useState(false);
   const [lastVerifiedHash, setLastVerifiedHash] = useState(null);
 
-  const fetchDashboard = async () => {
+  const fetchDashboard = async (isInitial = false) => {
+    if (isInitial) setLoading(true);
     try {
       const res = await API.get('/distributor/dashboard');
       if (res.data && res.data.success) {
@@ -19,12 +20,41 @@ const DistributorDashboard = () => {
     } catch (e) {
       console.error('Fetch distributor dashboard error:', e);
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchDashboard();
+    fetchDashboard(true);
+
+    let bc;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bc = new BroadcastChannel('rationsetu_realtime_events');
+        bc.onmessage = (event) => {
+          if (event.data?.type === 'SLOT_BOOKED' || event.data?.type === 'SLOT_CANCELLED') {
+            fetchDashboard(false);
+          }
+        };
+      }
+    } catch (e) {}
+
+    const handleStorage = (e) => {
+      if (e.key === 'rationsetu_last_booking_event') {
+        fetchDashboard(false);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    const timer = setInterval(() => {
+      fetchDashboard(false);
+    }, 4000);
+
+    return () => {
+      if (bc) bc.close();
+      window.removeEventListener('storage', handleStorage);
+      clearInterval(timer);
+    };
   }, []);
 
   const handleScanComplete = (scannedHash) => {

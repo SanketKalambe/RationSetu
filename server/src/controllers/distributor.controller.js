@@ -77,14 +77,24 @@ const getTodaySlots = async (req, res, next) => {
 
     const dateStr = req.query.date || new Date().toISOString().slice(0, 10);
 
-    const bookings = await SlotBooking.find({
+    const query = {
       shop: profile.shopId,
-      date: dateStr,
       status: { $ne: 'cancelled' }
-    }).populate({
-      path: 'consumerProfile',
-      populate: { path: 'user', select: 'name phone' }
-    });
+    };
+
+    if (dateStr && dateStr !== 'all') {
+      query.date = dateStr;
+    } else if (dateStr === 'all') {
+      const today = new Date().toISOString().slice(0, 10);
+      query.date = { $gte: today };
+    }
+
+    const bookings = await SlotBooking.find(query)
+      .sort({ date: 1, timeSlot: 1 })
+      .populate({
+        path: 'consumerProfile',
+        populate: { path: 'user', select: 'name phone' }
+      });
 
     const formattedBookings = bookings.map(b => ({
       bookingId: b._id,
