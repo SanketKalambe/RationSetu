@@ -129,49 +129,80 @@ const updateVerificationStatus = async (req, res, next) => {
   }
 };
 
-// @desc    Allocate monthly stock to shop
+// @desc    Allocate monthly stock to shop / Set official stock quotas
 // @route   POST /api/admin/stock-allocation
 // @access  Private (Admin)
 const allocateStock = async (req, res, next) => {
   try {
-    const { shopId, monthYear, item, quantityKg } = req.body;
+    const { shopId, monthYear, item, quantityKg, mode = 'set', items } = req.body;
 
     const shop = await Shop.findById(shopId);
     if (!shop) {
       return res.status(404).json({ success: false, error: 'Shop not found.' });
     }
 
-    const allocation = await StockAllocation.create({
-      shop: shop._id,
-      monthYear: monthYear || new Date().toISOString().slice(0, 7),
-      item,
-      quantityAllocatedKg: Number(quantityKg),
-      quantityReceivedKg: Number(quantityKg), // Auto-confirm stock in prototype
-      status: 'received',
-      allocatedByAdmin: req.user._id
-    });
+    const currentMonth = monthYear || new Date().toISOString().slice(0, 7);
 
-    // Update shop stock availability
-    let existingItem = shop.stockAvailability.find(s => s.item === item);
-    if (existingItem) {
-      existingItem.quantityKg += Number(quantityKg);
-    } else {
-      shop.stockAvailability.push({ item, quantityKg: Number(quantityKg), unit: 'kg' });
+    // Support bulk multi-item allocation array
+    if (Array.isArray(items) && items.length > 0) {
+      for (const reqItem of items) {
+        const qty = Number(reqItem.quantityKg) || 0;
+        const itemName = reqItem.item;
+        const unit = itemName === 'Kerosene' ? 'L' : 'kg';
+
+        let existing = shop.stockAvailability.find(s => s.item === itemName);
+        if (existing) {
+          existing.quantityKg = (mode === 'add') ? (existing.quantityKg + qty) : qty;
+        } else {
+          shop.stockAvailability.push({ item: itemName, quantityKg: qty, unit });
+        }
+
+        await StockAllocation.create({
+          shop: shop._id,
+          monthYear: currentMonth,
+          item: itemName,
+          quantityAllocatedKg: qty,
+          quantityReceivedKg: qty,
+          status: 'received',
+          allocatedByAdmin: req.user._id
+        });
+      }
+    } else if (item && quantityKg !== undefined) {
+      // Single item allocation
+      const qty = Number(quantityKg) || 0;
+      const unit = item === 'Kerosene' ? 'L' : 'kg';
+
+      let existingItem = shop.stockAvailability.find(s => s.item === item);
+      if (existingItem) {
+        existingItem.quantityKg = (mode === 'add') ? (existingItem.quantityKg + qty) : qty;
+      } else {
+        shop.stockAvailability.push({ item, quantityKg: qty, unit });
+      }
+
+      await StockAllocation.create({
+        shop: shop._id,
+        monthYear: currentMonth,
+        item,
+        quantityAllocatedKg: qty,
+        quantityReceivedKg: qty,
+        status: 'received',
+        allocatedByAdmin: req.user._id
+      });
     }
+
     await shop.save();
 
     if (shop.distributorUser) {
       await createNotification({
         userId: shop.distributorUser,
-        message: `Admin allocated ${quantityKg} kg of ${item} to your shop for month ${allocation.monthYear}.`,
+        message: `District Admin updated stock quota for your shop (${shop.shopName}).`,
         type: 'stock'
       });
     }
 
     res.json({
       success: true,
-      message: `Allocated ${quantityKg} kg of ${item} to shop [${shop.shopName}].`,
-      allocation,
+      message: `Official stock levels updated successfully for shop [${shop.shopName}].`,
       shopStock: shop.stockAvailability
     });
   } catch (err) {

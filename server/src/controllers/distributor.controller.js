@@ -8,15 +8,20 @@ const Transaction = require('../models/Transaction');
 // @access  Private (Distributor)
 const getStock = async (req, res, next) => {
   try {
-    const profile = await DistributorProfile.findOne({ user: req.user._id }).populate('shopId');
+    const profile = await DistributorProfile.findOne({ user: req.user._id });
     if (!profile || !profile.shopId) {
       return res.status(404).json({ success: false, error: 'No shop associated with this distributor account.' });
     }
 
+    const shop = await Shop.findById(profile.shopId);
+    if (!shop) {
+      return res.status(404).json({ success: false, error: 'Shop document not found.' });
+    }
+
     res.json({
       success: true,
-      shop: profile.shopId,
-      stockAvailability: profile.shopId.stockAvailability
+      shop,
+      stockAvailability: shop.stockAvailability || []
     });
   } catch (err) {
     next(err);
@@ -108,12 +113,15 @@ const getTodaySlots = async (req, res, next) => {
 // @access  Private (Distributor)
 const getDashboard = async (req, res, next) => {
   try {
-    const profile = await DistributorProfile.findOne({ user: req.user._id }).populate('shopId');
+    const profile = await DistributorProfile.findOne({ user: req.user._id });
     if (!profile || !profile.shopId) {
       return res.status(404).json({ success: false, error: 'Shop profile not found for this distributor.' });
     }
 
-    const shop = profile.shopId;
+    const shop = await Shop.findById(profile.shopId);
+    if (!shop) {
+      return res.status(404).json({ success: false, error: 'Shop document not found.' });
+    }
     const dateStr = new Date().toISOString().slice(0, 10);
 
     const todaySlotCount = await SlotBooking.countDocuments({

@@ -145,7 +145,7 @@ const DistributorDashboard = () => {
               Current Shop Inventory Stock Balance
             </h3>
             <Link to="/distributor/stock" className="text-xs text-blue-400 font-semibold hover:underline">
-              Manage Stock →
+              View Inventory →
             </Link>
           </div>
 
