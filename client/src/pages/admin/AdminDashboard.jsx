@@ -11,6 +11,35 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     dispatch(fetchAdminReports());
+
+    let bc;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bc = new BroadcastChannel('rationsetu_realtime_events');
+        bc.onmessage = (event) => {
+          if (event.data?.type === 'COMPLAINT_FILED' || event.data?.type === 'COMPLAINT_STATUS_UPDATED') {
+            dispatch(fetchAdminReports());
+          }
+        };
+      }
+    } catch (e) {}
+
+    const handleStorage = (e) => {
+      if (e.key === 'rationsetu_last_complaint_event') {
+        dispatch(fetchAdminReports());
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    const timer = setInterval(() => {
+      dispatch(fetchAdminReports());
+    }, 4000);
+
+    return () => {
+      if (bc) bc.close();
+      window.removeEventListener('storage', handleStorage);
+      clearInterval(timer);
+    };
   }, [dispatch]);
 
   const stats = reports?.stats || {};

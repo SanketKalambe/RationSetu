@@ -25,6 +25,28 @@ export const submitComplaint = createAsyncThunk('complaints/submit', async (form
       headers: { 'Content-Type': 'multipart/form-data' }
     });
     dispatch(fetchConsumerComplaints());
+
+    // Real-Time Cross-Tab & Device Synchronization Broadcast to Admin
+    try {
+      if (typeof window !== 'undefined') {
+        if ('BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('rationsetu_realtime_events');
+          bc.postMessage({
+            type: 'COMPLAINT_FILED',
+            payload: response.data.complaint,
+            timestamp: Date.now()
+          });
+        }
+        localStorage.setItem('rationsetu_last_complaint_event', JSON.stringify({
+          type: 'COMPLAINT_FILED',
+          payload: response.data.complaint,
+          timestamp: Date.now()
+        }));
+      }
+    } catch (e) {
+      console.warn('Real-time complaint broadcast notice:', e);
+    }
+
     return response.data.complaint;
   } catch (err) {
     return rejectWithValue(err.response?.data?.error || 'Failed to submit complaint.');

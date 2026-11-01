@@ -22,4 +22,12 @@ router.post('/stock-allocation', allocateStock);
 router.put('/settings', updateSettings);
 router.get('/reports', getAdminReports);
 
+const {
+  getAllComplaints,
+  updateComplaintStatus
+} = require('../controllers/complaint.controller');
+
+router.get('/complaints', getAllComplaints);
+router.patch('/complaints/:id', updateComplaintStatus);
+
 module.exports = router;

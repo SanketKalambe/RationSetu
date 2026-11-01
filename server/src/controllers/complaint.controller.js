@@ -56,6 +56,20 @@ const fileComplaint = async (req, res, next) => {
       type: 'complaint'
     });
 
+    try {
+      const User = require('../models/User');
+      const adminUser = await User.findOne({ role: 'admin' });
+      if (adminUser) {
+        await createNotification({
+          userId: adminUser._id,
+          message: `Real-Time Grievance: ${consumer.headOfHouseholdName || req.user.name} filed complaint: "${subject}".`,
+          type: 'complaint'
+        });
+      }
+    } catch (notifErr) {
+      console.warn('Admin complaint notification notice:', notifErr.message);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Complaint submitted successfully.',
