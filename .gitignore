@@ -38,3 +38,7 @@ yarn-error.log*
 # Presentations and Office docs (kept local only)
 *.pptx
 *.ppt
+
+# Research papers and local documents (strictly local only - never push to GitHub)
+MP Research paper/
+*[Rr]esearch [Pp]aper*/
